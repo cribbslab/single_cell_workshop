@@ -1,0 +1,206 @@
+---
+title: "Practical: QC with scater"
+subtitle: "Transcriptome Analysis Workshop"
+author: "Adam Cribbs"
+date: "24/01/2022"
+output:
+  html_document:
+    theme: cosmo
+    toc: yes
+---
+
+```{r, out.width = "40%", echo=FALSE}
+htmltools::img(src = knitr::image_uri(file.path("logo.png")), 
+               alt = 'logo', 
+               style = 'position:absolute; top:0; right:0; padding:10px;',
+               width='300')
+
+```
+
+
+In this quality control Rmarkdown we will go through how to perform quality analysis using the scater package, that automates a lot of the proces involved in measuring quality statistics.
+
+```{r, message=FALSE}
+knitr::opts_chunk$set(cache=FALSE, warning = FALSE, message = FALSE)
+library(scater)
+library(tximport)
+library(limma)
+```
+
+The scater package has a focus on aiding with quality control (QC) and pre-processing of single-cell RNA-seq data before further downstream analysis. Scater can be used as a complimentary technique to the previous QC that we have just looked at. 
+
+Scater sees QC as consisting of three distinct steps:
+
+- QC and filtering of cells
+- QC and filtering of features (genes)
+- QC of experimental variables
+
+Following QC, we can proceed with data normalisation before downstream analysis and modelling. 
+
+# Import data from salmon
+
+We import the data and then convert it to a SingleCellExperiment class. More informtation can be found to describe the class here: 
+https://bioconductor.org/packages/release/bioc/vignettes/SingleCellExperiment/inst/doc/intro.html
+
+```{r}
+txi <- tximport("salmon.dir/pbmc_1k_v3_S1/alevin/quants_mat.gz", type="alevin")
+
+sce <- SingleCellExperiment(assays = list(counts = as.matrix(txi$counts)))
+
+#Calculate TMPs
+tpm(sce) <- calculateTPM(sce)
+# Calculate CPM
+cpm(sce) <- calculateCPM(sce)
+sce <- logNormCounts(sce)
+
+# Run PCA
+sce <- runPCA(sce)
+# Run UMAP
+sce <- runUMAP(sce)
+```
+
+# Plot PCA
+
+Scater allows you to plots PCA, to assess the presence of batch effects
+
+```{r}
+plotPCA(sce)
+```
+
+# Plot UMAP
+
+UMAP projections are also a nice visual aid to identify irregularities in the data.
+
+```{r}
+plotUMAP(sce)
+```
+
+# Calulate metrics
+
+Quality metrics are calculated for you during this step.
+
+```{r}
+sce <- addPerCellQC(sce)
+```
+
+# View the QC cell metrics
+
+Quality control metrics for each cell and feature, stored in the colData and rowData respectively
+
+```{r}
+colnames(colData(sce))
+```
+
+# View the QC feature metrics
+
+Feature metrics can be accessed using rowData()
+
+```{r}
+colnames(rowData(sce))
+```
+
+# Quality control plots
+
+
+```{r}
+plotScater(sce, nfeatures = 300, exprs_values = "counts")
+```
+
+
+# Plot multiple features
+
+```{r}
+p1 <- plotColData(sce, x = "sum", 
+    y = "detected")
+p2 <- plotColData(sce, x = "sum",
+    y = "sizeFactor")
+p3 <- plotColData(sce, x = "sum",
+    y = "total")
+gridExtra::grid.arrange(p1, p2, p3, ncol = 3)
+```
+
+# Plot highest expressed genes
+
+```{r}
+plotHighestExprs(sce, exprs_values = "counts")
+```
+
+# Visualizing expression values
+
+```{r}
+plotExpression(sce, rownames(sce)[1:6], x = "total")
+```
+
+# Filtering the single-cell experiment dataset
+
+Column subsetting of the SingeCellExperiment object will only retain the selected cells, thus removing low-quality or otherwise unwanted cells. We demonstrate below by retaining the first 40 cells. (This happens to be all the cells in this particular dataset, which are already known to be high-quality.)
+
+scater also provides a filter function, inspired by the function of the same name in the dplyr package and operating in exactly the same manner. This can be used to very conviently subset (i.e. filter) the cells of an SingleCellExperiment object based on its colData variables.
+
+```{r}
+# The following code wont work, its just an example to show that this function exists
+# filter(sce, Treatment == "treat1")
+```
+
+
+# Use metrics to filter
+
+```{r}
+keep.total <- sce$detected > 500
+keep.n <- sce$total > 1000
+filtered <- sce[,keep.total & keep.n]
+dim(filtered)
+```
+
+# Filter by features
+
+It is common to filter out low-abundance features prior to further analyses. This is easily achieved by row subsetting of the SingleCellExperiment object. In the example below, genes are only retained if they are expressed in four or more cells:
+
+```{r}
+keep_feature <- nexprs(sce, byrow=TRUE) >= 4
+sce <- sce[keep_feature,]
+dim(sce)
+
+# Save sce object for downstream analysis
+saveRDS(sce, "sce_scater.rds")
+```
+
+# Plot relationship between experimental factors and expression
+
+```{r}
+sce <- logNormCounts(sce)
+plotExplanatoryVariables(sce)
+```
+
+
+# Remove technical bias
+
+Scaling normalization accounts for cell-specific biases that scale expression up or down for all genes in a particular cell, e.g., coverage or capture efficiency. The simplest approach to scaling normalization defines the size factors from the scaled library sizes of all cells. is done so that the mean size factor is equal to unity, ensuring that the normalized values are on the same scale as the original counts.
+
+```{r}
+sizeFactors(sce) <- librarySizeFactors(sce)
+summary(sizeFactors(sce))
+```
+
+Log-transformed normalized expression values can then be computed with normalize, which stores the output in the "logcounts" slot.
+
+```{r}
+sce <- logNormCounts(sce)
+```
+
+While simple, library size normalization does not account for composition biases that are often present in high-throughput sequencing data. It also fails to account for differences in the biases affecting spike-in transcripts. We strongly suggest using the computeSumFactors and computeSpikeFactors functions from the scran package.
+
+# Batch correction
+
+Batch correction accounts for systematic differences in expression between cells in different batches. Unlike scaling biases, these are usually constant across all cells in a given batch but different for each gene.
+
+Batch effects can be regressed out by using the removeBatchEffect function from the limma package. This applies a linear model, usually on the log-expression values to avoid issues with the mean-variance relationship. 
+
+```{r}
+batch <- rep(1:2, each=20)
+corrected <- removeBatchEffect(logcounts(sce), block=batch)
+assay(sce, "corrected_logcounts") <- corrected
+```
+
+Factors of interest can be included in design to avoid regressing them out. This is necessary when they are not orthogonal to the block. However, this assumes that your model is fully specified, which may not be possible when the factors of interest are unknown. In such cases, an alternative method is to use the mnnCorrect approach from scran.
+

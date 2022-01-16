@@ -1,0 +1,68 @@
+---
+title: "Practical: Instroduction"
+subtitle: "Transcriptome Analysis Workshop"
+author: "Adam Cribbs"
+date: "24/01/2022"
+output:
+  html_document:
+    theme: cosmo
+    toc: yes
+---
+
+```{r, out.width = "40%", echo=FALSE}
+htmltools::img(src = knitr::image_uri(file.path("logo.png")), 
+               alt = 'logo', 
+               style = 'position:absolute; top:0; right:0; padding:10px;',
+               width='300')
+
+```
+
+This tutorial uses single-cell sequencing data of PBMCs sequenced using the 10Xv2 and 10Xv3 genomics kit. 
+The data can be downloaded from https://www.10xgenomics.com/resources/datasets.
+
+In order to run the tutorial in R, you first need to pseudoalign the data using salmon alevin. The software can be downloaded
+using conda and documentation can be accessed here: https://salmon.readthedocs.io/en/latest/alevin.html
+
+
+# Download data and software
+
+In order to generate a decoy reference you will need to download the salmon toolkit:
+
+`git clone https://github.com/COMBINE-lab/SalmonTools.git`
+
+You will need a reference fasta and gtf from genode (https://www.gencodegenes.org):
+
+`wget https://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_human/release_39/gencode.v39.annotation.gtf.gz`
+`wget https://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_human/release_39/gencode.v39.transcripts.fa.gz`
+`wget https://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_human/release_39/GRCh38.p13.genome.fa.gz`
+
+# Preparing transcriptome indices (mapping-based mode)
+
+One of the novel and innovative features of Salmon is its ability to accurately quantify transcripts without having previously aligned the reads using its fast, built-in selective-alignment mapping algorithm.
+
+If you want to use Salmon in mapping-based mode, then you first have to build a salmon index for your transcriptome. Assume that transcripts.fa contains the set of transcripts you wish to quantify. We generally recommend that you build a decoy-aware transcriptome file.
+
+There are two options for generating a decoy-aware transcriptome:
+
+- The first is to compute a set of decoy sequences by mapping the annotated transcripts you wish to index against a hard-masked version of the organism’s genome. This can be done with e.g. MashMap2, and we provide some simple scripts to greatly simplify this whole process. Specifically, you can use the generateDecoyTranscriptome.sh script, whose instructions you can find in this README.
+
+- The second is to use the entire genome of the organism as the decoy sequence. This can be done by concatenating the genome to the end of the transcriptome you want to index and populating the decoys.txt file with the chromosome names. Detailed instructions on how to prepare this type of decoy sequence is available here. This scheme provides a more comprehensive set of decoys, but, obviously, requires considerably more memory to build the index.
+
+Generate the decoy:
+`bash generateDecoyTranscriptome.sh -a gencode.v39.annotation.gtf.gz -g GRCh38.p13.genome.fa -t gencode.v39.transcripts.fa.gz -o decoy`
+
+or generate metadata for decoy 
+`grep "^>" <(gunzip -c GRCh38.p13.genome.fa.gz) | cut -d " " -f 1 > decoys.txt sed -i.bak -e 's/>//g' decoys.txt`
+
+
+Along with the list of decoys salmon also needs the concatenated transcriptome and genome reference file for index. NOTE: the genome targets (decoys) should come after the transcriptome targets in the reference
+
+`cat gencode.v39.transcripts.fa.gz GRCh38.p13.genome.fa.gz > gentrome.fa.gz`
+
+Generate the index:
+
+`salmon index -t gentrome.fa.gz -d decoys.txt -p 12 -i salmon_index --gencode`
+
+# Alignment
+
+`salmon alevin -l ISR -1 cb.fastq.gz -2 reads.fastq.gz --chromium  -i salmon_index_directory -p 10 -o alevin_output --tgMap txp2gene.tsv`

@@ -1,0 +1,53 @@
+name: Single-cell RNA_seq analysis
+navbar:
+  title: Single-cell RNA_seq analysis
+  right:
+  - text: Home
+    href: index.html
+  - text: Installation
+    icon: fa-flask
+    href: 00_Installation.html
+  - text: QC
+    href: 01_QC.html
+  - text: QC scater
+    icon: fa-flask
+    href: 02_QCScater.html
+  - text: Alevin single
+    icon: fa-flask
+    href: 03_AlevinSeuratSingleSample.html
+  - text: Alevin combined
+    icon: fa-flask
+    href: 04_Alevin_Seurat_combined.html
+  - text: Monocle3
+    icon: fa-flask
+    href: 05_Alevin_Monocle3.html
+  - text: Classification
+    icon: fa-flask
+    href: 06_classification.html
+  - text: 3D plotting
+    icon: fa-flask
+    href: Optional_3d_plotting1.html
+  - text: 3D plotting 2
+    icon: fa-flask
+    href: Optional_3D_plotting2.html
+
+
+output:
+  html_document:
+    css: style.css
+    fig_caption: yes
+    theme: cerulean
+    highlight: textmate
+    toc: yes
+    toc_depth: 2
+    toc_float:
+      collapsed: no
+      smooth_scroll: yes
+    lib_dir: site_libs
+    self_contained: no
+exclude:
+- rds
+- counts
+- expdata
+- '*.R'
+output_dir: Final_report
